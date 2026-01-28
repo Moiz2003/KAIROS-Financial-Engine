@@ -1,0 +1,53 @@
+*.pyc
+__pycache__/
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+.DS_Store
+.venv/
+venv/
+.idea/
+.vscode/
+*.log
+
+# Monorepo Structure
+# Backend
+backend/venv/
+backend/.env
+backend/__pycache__/
+backend/.pytest_cache/
+backend/*.pyc
+backend/.coverage
+backend/htmlcov/
+backend/.env.local
+
+# iOS
+ios/*.xcuserdata
+ios/*.xcworkspace/xcuserdata/
+ios/DerivedData/
+ios/Pods/
+ios/.DS_Store
+
+# Android
+android/.gradle/
+android/build/
+android/.idea/
+android/.DS_Store
+android/*.jks
+android/keystore/
+
+# OS
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# IDE
+*.sublime-project
+*.sublime-workspace
+
+# Python
+.Python
