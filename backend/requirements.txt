@@ -18,7 +18,6 @@ numpy==2.2.6
 openai==2.16.0
 packaging==26.0
 pandas==3.0.0
-pandas-ta==0.4.71b0
 pluggy==1.6.0
 pycryptodome==3.23.0
 pydantic==2.12.5
