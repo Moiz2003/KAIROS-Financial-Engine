@@ -54,7 +54,32 @@ class Config:
         
         # Logging Configuration
         self.log_level: str = os.getenv("LOG_LEVEL", "INFO")
-        self.log_format: str = os.getenv("LOG_FORMAT", "json")  # json or text
+        self.log_format: str = os.getenv("LOG_FORMAT", "json")
+        
+        # JWT / Authentication Configuration
+        self.jwt_secret_key: str = os.getenv("JWT_SECRET_KEY", "change-me-in-production")
+        self.jwt_algorithm: str = os.getenv("JWT_ALGORITHM", "HS256")
+        self.jwt_access_token_expire_minutes: int = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+        self.google_oauth_client_id: str = os.getenv("GOOGLE_OAUTH_CLIENT_ID", "")
+        self.google_oauth_client_secret: str = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET", "")
+        
+        # MongoDB
+        self.mongo_uri: str = os.getenv("MONGO_URI", "mongodb://localhost:27017/kairos_engine")
+
+        # CORS — browsers reject wildcard origins when credentials=True
+        self.allowed_origins: list[str] = [
+            o.strip()
+            for o in os.getenv(
+                "ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:3000"
+            ).split(",")
+            if o.strip()
+        ]
+
+        # Cookie security — must be True in production (requires HTTPS)
+        self.cookie_secure: bool = os.getenv("COOKIE_SECURE", "false").lower() == "true"
+
+        # Pre-computed RBAC roles
+        self.admin_api_key: str = os.getenv("ADMIN_API_KEY", "")
         
         self._initialized = True
     

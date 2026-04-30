@@ -1,0 +1,19 @@
+@import "tailwindcss";
+
+/* ── Custom theme extensions for Tailwind v4 ── */
+@theme {
+    --color-neutral-950: #0a0a0a;
+    --color-neutral-900: #141414;
+    --color-neutral-800: #1f1f1f;
+}
+
+/* ── Smooth scrolling ── */
+html {
+    scroll-behavior: smooth;
+}
+
+/* ── Subtle selection color ── */
+::selection {
+    background-color: rgba(52, 211, 153, 0.2);
+    color: #e4e4e7;
+}

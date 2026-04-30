@@ -15,6 +15,7 @@ from typing import Optional
 from core.exceptions import RiskAssessmentException
 from core.logging_config import get_logger
 from domain.models import TradeSignal, RiskAssessment, AnalysisResult, TrendType, TradeAction
+from domain.services.signal_validator import SignalValidator, ValidationStatus
 from services.abstractions import IMarketDataProvider, IAIContextProvider
 from domain.entities import MarketAnalyzer
 from domain.services import SignalGenerator
@@ -47,6 +48,7 @@ class TradeOrchestrator:
         market_provider: IMarketDataProvider,
         ai_provider: IAIContextProvider,
         signal_generator: SignalGenerator = None,
+        signal_validator: SignalValidator = None,
     ):
         """
         Initialize orchestrator with injected dependencies.
@@ -67,6 +69,7 @@ class TradeOrchestrator:
         self.market_provider = market_provider
         self.ai_provider = ai_provider
         self.signal_generator = signal_generator or SignalGenerator(confidence_threshold=0.65)
+        self.signal_validator = signal_validator or SignalValidator()
         self.analyzer = MarketAnalyzer()
     
     def get_trade_recommendation(self, symbol: str, interval: str = "4h", limit: int = 200) -> TradeSignal:
@@ -158,13 +161,12 @@ class TradeOrchestrator:
         analysis: AnalysisResult,
     ) -> TradeSignal:
         """
-        Apply AI "Reality Check" to refine technical signal.
+        Apply AI "Reality Check" to validate technical signal.
         
-        Queries Perplexity for:
-        1. Current news sentiment on the asset
-        2. Reasoning synthesis (News + Math)
-        
-        Uses this to validate or adjust confidence of technical signal.
+        FR22/FR23/FR24 rules are delegated to SignalValidator:
+        - BUY + Bearish sentiment => CONTRADICTION (drop trade)
+        - BUY + Bullish sentiment => HIGH_CONFIDENCE (approve)
+        - Otherwise passthrough/approved
         
         Args:
             symbol: Trading pair
@@ -178,10 +180,11 @@ class TradeOrchestrator:
             logger.debug(f"AI Reality Check: Fetching sentiment for {symbol}")
             
             # Fetch news sentiment
-            sentiment = self.ai_provider.get_news_sentiment(
+            raw_sentiment = self.ai_provider.get_news_sentiment(
                 topic=symbol.replace("USDT", ""),  # "BTCUSDT" → "BTC"
                 context=f"Trading analysis. RSI: {analysis.rsi}, Trend: {analysis.trend.value}"
             )
+            sentiment = self.signal_validator.normalize_sentiment(raw_sentiment)
             
             logger.debug(f"News sentiment: {sentiment}")
             
@@ -202,68 +205,33 @@ class TradeOrchestrator:
             
             logger.debug(f"AI Reasoning: {ai_reasoning}")
             
-            # Adjust confidence based on sentiment alignment
-            confidence_adjustment = self._calculate_sentiment_adjustment(
-                sentiment=sentiment,
-                action=technical_signal.action,
+            # Run Reality Check validation (isolated domain logic)
+            validation_result = self.signal_validator.reality_check(
+                ta_signal=technical_signal,
+                ai_sentiment_score=sentiment,
+                ai_summary=ai_reasoning,
             )
-            
-            adjusted_confidence = min(1.0, max(0.0, 
-                technical_signal.confidence + confidence_adjustment
-            ))
-            
-            logger.info(
-                f"Reality Check: Sentiment={sentiment}, "
-                f"Confidence adjusted {technical_signal.confidence:.2f} → {adjusted_confidence:.2f}"
-            )
-            
-            # Create refined signal
-            refined_signal = TradeSignal(
-                action=technical_signal.action,
-                confidence=adjusted_confidence,
-                reasoning=f"Technical: {technical_signal.reasoning} | News: {sentiment} | {ai_reasoning}",
-                technical_score=technical_signal.technical_score,
-                sentiment_score=self._sentiment_to_score(sentiment),
-                timestamp=datetime.utcnow(),
-            )
-            
-            return refined_signal
+
+            if validation_result.status == ValidationStatus.CONTRADICTION:
+                logger.warning(
+                    f"Reality Check CONTRADICTION for {symbol}: {validation_result.reason}. "
+                    "Trade dropped."
+                )
+            elif validation_result.status == ValidationStatus.HIGH_CONFIDENCE:
+                logger.info(
+                    f"Reality Check HIGH_CONFIDENCE for {symbol}: {validation_result.reason}. "
+                    "Trade approved with elevated confidence."
+                )
+            else:
+                logger.info(f"Reality Check APPROVED for {symbol}: {validation_result.reason}")
+
+            return validation_result.output_signal
         
         except Exception as e:
             logger.warning(f"AI Reality Check failed (using technical signal only): {str(e)}")
             # Fallback: use technical signal unchanged
             return technical_signal
     
-    def _calculate_sentiment_adjustment(self, sentiment: str, action: TradeAction) -> float:
-        """
-        Calculate confidence adjustment based on sentiment alignment.
-        
-        BUY signal + positive sentiment → +0.10
-        BUY signal + negative sentiment → -0.15
-        SELL signal + negative sentiment → +0.10
-        SELL signal + positive sentiment → -0.15
-        """
-        if action == TradeAction.BUY:
-            if sentiment == "positive":
-                return 0.10  # Sentiment confirms BUY
-            elif sentiment == "negative":
-                return -0.15  # Sentiment contradicts BUY
-            else:  # neutral
-                return 0.0
-        elif action == TradeAction.SELL:
-            if sentiment == "negative":
-                return 0.10  # Sentiment confirms SELL
-            elif sentiment == "positive":
-                return -0.15  # Sentiment contradicts SELL
-            else:  # neutral
-                return 0.0
-        return 0.0
-    
-    def _sentiment_to_score(self, sentiment: str) -> float:
-        """Convert sentiment to numeric score (0-1)."""
-        return {"positive": 0.7, "neutral": 0.5, "negative": 0.3}.get(sentiment, 0.5)
-
-
 class RiskManager:
     """
     Pure domain service for risk assessment.

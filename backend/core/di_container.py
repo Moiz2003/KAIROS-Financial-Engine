@@ -116,31 +116,45 @@ class ServiceContainer:
     def _initialize_orchestrator(self):
         """Initialize the orchestrator with all dependencies."""
         logger.debug("Initializing orchestrator...")
-        
-        if not self.binance_adapter:
-            raise ValueError("Binance adapter required for orchestrator (check BINANCE_API_KEY, BINANCE_API_SECRET)")
-        
-        if not self.perplexity_adapter:
-            raise ValueError("Perplexity adapter required for orchestrator (check PERPLEXITY_API_KEY)")
-        
-        self.orchestrator = TradeOrchestrator(
-            market_provider=self.binance_adapter,
-            ai_provider=self.perplexity_adapter,
-            signal_generator=self.signal_generator,
-        )
-        logger.info("✓ Orchestrator initialized")
+
+        if not self.binance_adapter or not self.perplexity_adapter:
+            logger.warning(
+                "Orchestrator initialization deferred - required adapters unavailable "
+                "(Binance and/or AI provider missing)."
+            )
+            self.orchestrator = None
+            return
+
+        try:
+            self.orchestrator = TradeOrchestrator(
+                market_provider=self.binance_adapter,
+                ai_provider=self.perplexity_adapter,
+                signal_generator=self.signal_generator,
+            )
+            logger.info("✓ Orchestrator initialized")
+        except Exception as e:
+            logger.error(f"Failed to initialize orchestrator: {e}")
+            self.orchestrator = None
     
     def _initialize_trade_executor(self):
         """Initialize the trade executor."""
         logger.debug("Initializing trade executor...")
-        
+
         if not self.binance_adapter:
-            raise ValueError("Binance adapter required for trade executor (check BINANCE_API_KEY, BINANCE_API_SECRET)")
-        
-        self.trade_executor = TradeExecutor(
-            market_provider=self.binance_adapter,
-        )
-        logger.info("✓ Trade executor initialized")
+            logger.warning(
+                "Trade executor initialization deferred - Binance adapter unavailable."
+            )
+            self.trade_executor = None
+            return
+
+        try:
+            self.trade_executor = TradeExecutor(
+                market_provider=self.binance_adapter,
+            )
+            logger.info("✓ Trade executor initialized")
+        except Exception as e:
+            logger.error(f"Failed to initialize trade executor: {e}")
+            self.trade_executor = None
     
     def get_orchestrator(self) -> TradeOrchestrator:
         """

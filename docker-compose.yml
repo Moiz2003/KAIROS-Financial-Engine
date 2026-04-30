@@ -1,0 +1,74 @@
+services:
+  # ── MongoDB ──────────────────────────────────────────────────────────────────
+  mongo:
+    image: mongo:7
+    container_name: kairos_mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - kairos_net
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── FastAPI Backend ───────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: kairos_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./backend/.env
+    environment:
+      # Override .env values that must change inside Docker
+      MONGO_URI: mongodb://mongo:27017/kairos_engine
+      API_HOST: "0.0.0.0"
+      API_PORT: "8000"
+      # Reload is unreliable on Docker-for-Windows; restart the container instead
+      API_RELOAD: "false"
+      API_WORKERS: "2"
+    volumes:
+      # Mount source for live code changes (restart required on Windows)
+      - ./backend:/app
+    depends_on:
+      mongo:
+        condition: service_healthy
+    networks:
+      - kairos_net
+
+  # ── Vite + React Frontend ─────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: kairos_frontend
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    environment:
+      # Browser resolves this — must be a host-accessible address, not the service name
+      VITE_API_BASE: http://localhost:8000
+    volumes:
+      # Mount only src for hot reload; node_modules stays inside the container
+      - ./web/src:/app/src
+      - ./web/index.html:/app/index.html
+    depends_on:
+      - backend
+    networks:
+      - kairos_net
+
+volumes:
+  mongo_data:
+    driver: local
+
+networks:
+  kairos_net:
+    driver: bridge
