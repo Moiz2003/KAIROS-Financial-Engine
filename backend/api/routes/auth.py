@@ -12,9 +12,10 @@ Endpoints:
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
 from api.dependencies import COOKIE_NAME, get_current_user
+from core.rate_limiter import limiter
 from api.schemas.auth import (
     AuthSuccessResponse,
     GoogleAuthRequest,
@@ -60,7 +61,8 @@ def _set_auth_cookie(response: Response, token: str) -> None:
 # ---------------------------------------------------------------------------
 
 @router.post("/register", response_model=AuthSuccessResponse, status_code=201)
-async def register(body: UserRegistrationRequest, response: Response):
+@limiter.limit("5/minute")
+async def register(request: Request, body: UserRegistrationRequest, response: Response):
     """
     Create a new local account.
 
@@ -101,7 +103,8 @@ async def register(body: UserRegistrationRequest, response: Response):
 # ---------------------------------------------------------------------------
 
 @router.post("/login", response_model=AuthSuccessResponse)
-async def login(body: LoginRequest, response: Response):
+@limiter.limit("10/minute")
+async def login(request: Request, body: LoginRequest, response: Response):
     """
     Authenticate with email and password.
 

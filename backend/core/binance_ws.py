@@ -15,6 +15,8 @@ from typing import Set
 import websockets
 from fastapi import WebSocket
 
+from core.ta_engine import ta_engine
+
 logger = logging.getLogger(__name__)
 
 _TESTNET_URL = (
@@ -119,6 +121,8 @@ class BinanceStreamManager:
         if msg:
             self._latest = msg
             await self._broadcast(msg)
+            if msg.get("type") == "kline":
+                asyncio.create_task(ta_engine.on_kline(msg))
 
     @staticmethod
     def _norm_ticker(d: dict) -> dict | None:

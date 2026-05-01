@@ -9,7 +9,7 @@ Endpoints:
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 
 from core.database import Database
@@ -95,6 +95,29 @@ async def get_progress(current_user: dict = Depends(get_current_user)):
         progress=ProgressData(**doc.get("progress", {})),
         updated_at=doc.get("updated_at", datetime.now(timezone.utc)),
     )
+
+
+@router.get("/stats", tags=["progress"])
+async def get_trade_stats(
+    symbol: Optional[str] = Query(None, description="Scope stats to one symbol (FR34)"),
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """
+    FR33/FR34: Return aggregate trade statistics sourced from the `trades` collection.
+
+    Without `symbol` → all-symbol totals (FR33).
+    With    `symbol` → per-symbol breakdown (FR34).
+    """
+    from domain.services.portfolio_manager import portfolio_manager
+
+    user_id = current_user.get("sub", "")
+    sym = symbol.upper() if symbol else None
+    try:
+        stats = await portfolio_manager.get_stats(user_id, symbol=sym)
+        return {"user_id": user_id, **stats}
+    except Exception as exc:
+        logger.error("Stats fetch failed for %s: %s", user_id, exc)
+        raise HTTPException(status_code=500, detail=f"Failed to fetch stats: {exc}")
 
 
 @router.put("/progress", response_model=ProgressResponse)

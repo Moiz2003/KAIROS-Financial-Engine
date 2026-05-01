@@ -6,6 +6,7 @@ Design Pattern: Adapter Pattern
 Reasoning: Adapts external API to internal interface, isolating business logic
 """
 
+import time
 from typing import List
 import os
 from binance.spot import Spot
@@ -76,26 +77,24 @@ class BinanceAdapter(IMarketDataProvider):
         Raises:
             MarketDataException: If API call fails or parameters are invalid
         """
-        try:
-            if limit < 1 or limit > 1000:
-                raise ValueError("Limit must be between 1 and 1000")
-            
-            logger.info(f"Fetching {limit} {interval} candles for {symbol}")
-            klines = self.client.klines(
-                symbol=symbol,
-                interval=interval,
-                limit=limit,
-            )
-            logger.debug(f"Successfully fetched {len(klines)} candles for {symbol}")
-            return klines
-        except ValueError as e:
-            error_msg = f"Invalid parameters for klines: {str(e)}"
-            logger.error(error_msg)
-            raise MarketDataException(error_msg)
-        except Exception as e:
-            error_msg = f"Failed to fetch klines for {symbol}: {str(e)}"
-            logger.error(error_msg)
-            raise MarketDataException(error_msg)
+        if limit < 1 or limit > 1000:
+            raise MarketDataException("Limit must be between 1 and 1000")
+
+        logger.info(f"Fetching {limit} {interval} candles for {symbol}")
+        for attempt in range(3):
+            try:
+                klines = self.client.klines(symbol=symbol, interval=interval, limit=limit)
+                logger.debug(f"Successfully fetched {len(klines)} candles for {symbol}")
+                return klines
+            except Exception as exc:
+                if attempt == 2:
+                    raise MarketDataException(
+                        f"Binance REST failed after 3 attempts: {exc}"
+                    ) from exc
+                logger.warning(
+                    f"Binance klines attempt {attempt + 1} failed for {symbol}: {exc} — retrying"
+                )
+                time.sleep(0.5 * (attempt + 1))
     
     def get_current_price(self, symbol: str) -> float:
         """
@@ -110,17 +109,18 @@ class BinanceAdapter(IMarketDataProvider):
         Raises:
             MarketDataException: If API call fails or price is invalid
         """
-        try:
-            # Use ticker endpoint to fetch current price
-            ticker = self.client.ticker_price(symbol=symbol)
-            price = float(ticker["price"])
-            logger.debug(f"{symbol} current price: {price}")
-            return price
-        except ValueError as e:
-            error_msg = f"Invalid price data for {symbol}: {str(e)}"
-            logger.error(error_msg)
-            raise MarketDataException(error_msg)
-        except Exception as e:
-            error_msg = f"Failed to fetch current price for {symbol}: {str(e)}"
-            logger.error(error_msg)
-            raise MarketDataException(error_msg)
+        for attempt in range(3):
+            try:
+                ticker = self.client.ticker_price(symbol=symbol)
+                price = float(ticker["price"])
+                logger.debug(f"{symbol} current price: {price}")
+                return price
+            except Exception as exc:
+                if attempt == 2:
+                    raise MarketDataException(
+                        f"Binance REST failed after 3 attempts: {exc}"
+                    ) from exc
+                logger.warning(
+                    f"Binance price attempt {attempt + 1} failed for {symbol}: {exc} — retrying"
+                )
+                time.sleep(0.5 * (attempt + 1))

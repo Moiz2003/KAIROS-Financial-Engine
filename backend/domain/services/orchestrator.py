@@ -10,6 +10,7 @@ The Orchestrator is the "Composition Root" for the domain layer.
 It injects all dependencies and coordinates their interaction.
 """
 
+import asyncio
 from datetime import datetime
 from typing import Optional
 from core.exceptions import RiskAssessmentException
@@ -72,54 +73,46 @@ class TradeOrchestrator:
         self.signal_validator = signal_validator or SignalValidator()
         self.analyzer = MarketAnalyzer()
     
-    def get_trade_recommendation(self, symbol: str, interval: str = "4h", limit: int = 200) -> TradeSignal:
+    async def get_trade_recommendation(self, symbol: str, interval: str = "4h", limit: int = 200) -> TradeSignal:
         """
-        CRITICAL: Orchestrator's main method.
-        
-        Generates a synthesized trade recommendation by:
-        1. Fetching candles and technical indicators
-        2. Generating technical signal (pure domain logic)
-        3. Performing "Reality Check" via AI if signal is actionable
-        4. Returning final synthesized signal
-        
-        Args:
-            symbol: Trading pair (e.g., "BTCUSDT")
-            interval: Candle interval (default "4h")
-            limit: Number of candles to fetch (default 200 for EMA calculation)
-        
+        Async orchestrator entry point.
+
+        All blocking HTTP calls (Binance REST, Perplexity API) are offloaded to
+        a thread pool via asyncio.to_thread() so the FastAPI event loop is never
+        blocked.
+
         Returns:
-            TradeSignal: Complete trade recommendation with reasoning
-        
+            TradeSignal: Complete trade recommendation with reasoning.
         Raises:
-            Exception: If any orchestration step fails (transparent error handling)
+            Exception: Propagates any orchestration failure transparently.
         """
         try:
             logger.info(f"Orchestrating trade recommendation for {symbol}")
-            
-            # STEP 1: Fetch market data
+
+            # STEP 1: Fetch market data — both are blocking HTTP; run in thread pool.
             logger.debug(f"Step 1: Fetching {limit} {interval} candles for {symbol}")
-            klines = self.market_provider.get_klines(
-                symbol=symbol,
-                interval=interval,
-                limit=limit,
+            klines, price_data = await asyncio.gather(
+                asyncio.to_thread(
+                    self.market_provider.get_klines,
+                    symbol=symbol,
+                    interval=interval,
+                    limit=limit,
+                ),
+                asyncio.to_thread(self.market_provider.get_current_price, symbol),
             )
-            price_data = self.market_provider.get_current_price(symbol)
-            
-            # Extract closing prices for analysis
-            prices = [float(kline[4]) for kline in klines]  # Close price is index 4
+
+            prices = [float(kline[4]) for kline in klines]  # index 4 = close
             current_price = float(price_data)
-            
             logger.debug(f"Fetched {len(prices)} prices, current: {current_price}")
-            
-            # STEP 2: Calculate technical indicators
-            logger.debug(f"Step 2: Calculating technical indicators")
+
+            # STEP 2: Technical indicators — pure Python, no I/O.
+            logger.debug("Step 2: Calculating technical indicators")
             rsi = self.analyzer.calculate_rsi(prices, period=14)
             ema_200 = self.analyzer.calculate_ema(prices, period=200)
             trend = self.analyzer.detect_trend(current_price, ema_200, threshold=0.01)
-            
             logger.debug(f"RSI: {rsi}, EMA200: {ema_200}, Trend: {trend}, Price: {current_price}")
-            
-            # STEP 3: Create analysis result
+
+            # STEP 3: Build AnalysisResult value object.
             analysis = AnalysisResult(
                 symbol=symbol,
                 price=current_price,
@@ -128,67 +121,55 @@ class TradeOrchestrator:
                 trend=TrendType(trend),
                 timestamp=datetime.utcnow(),
             )
-            
-            # STEP 4: Generate technical signal (pure domain logic)
-            logger.debug(f"Step 3: Generating technical signal via Sniper Strategy")
+
+            # STEP 4: Sniper Strategy signal (pure domain logic).
+            logger.debug("Step 3: Generating technical signal via Sniper Strategy")
             technical_signal = self.signal_generator.generate_signal(analysis)
-            
-            logger.debug(f"Technical signal: {technical_signal.action}, confidence: {technical_signal.confidence}")
-            
-            # STEP 5: Reality Check (AI sentiment) if signal is actionable
+            logger.debug(
+                f"Technical signal: {technical_signal.action}, "
+                f"confidence: {technical_signal.confidence}"
+            )
+
+            # STEP 5: Reality Check via AI — only for actionable signals.
             if technical_signal.action in [TradeAction.BUY, TradeAction.SELL]:
-                logger.info(f"Step 4: Performing 'Reality Check' via AI for {technical_signal.action}")
-                final_signal = self._apply_ai_reality_check(
+                logger.info(
+                    f"Step 4: Performing Reality Check via AI for {technical_signal.action}"
+                )
+                final_signal = await self._apply_ai_reality_check(
                     symbol=symbol,
                     technical_signal=technical_signal,
                     analysis=analysis,
                 )
             else:
-                logger.debug("Signal is HOLD - skipping AI Reality Check")
+                logger.debug("Signal is HOLD — skipping AI Reality Check")
                 final_signal = technical_signal
-            
+
             logger.info(f"✓ Trade recommendation complete: {final_signal.action}")
             return final_signal
-        
+
         except Exception as e:
             logger.error(f"Orchestration failed for {symbol}: {str(e)}")
             raise
     
-    def _apply_ai_reality_check(
+    async def _apply_ai_reality_check(
         self,
         symbol: str,
         technical_signal: TradeSignal,
         analysis: AnalysisResult,
     ) -> TradeSignal:
         """
-        Apply AI "Reality Check" to validate technical signal.
-        
+        Async Reality Check — offloads both Perplexity HTTP calls to threads.
+
         FR22/FR23/FR24 rules are delegated to SignalValidator:
-        - BUY + Bearish sentiment => CONTRADICTION (drop trade)
-        - BUY + Bullish sentiment => HIGH_CONFIDENCE (approve)
-        - Otherwise passthrough/approved
-        
-        Args:
-            symbol: Trading pair
-            technical_signal: Initial technical signal
-            analysis: Technical analysis result (RSI, EMA, trend)
-        
-        Returns:
-            Potentially adjusted TradeSignal with AI-informed confidence
+        - BUY + Bearish sentiment  → CONTRADICTION (forced HOLD)
+        - BUY + Bullish sentiment  → HIGH_CONFIDENCE (confidence ≥ 0.90)
+        - Otherwise                → APPROVED passthrough
+
+        Falls back to the unmodified technical_signal if the AI call fails.
         """
         try:
             logger.debug(f"AI Reality Check: Fetching sentiment for {symbol}")
-            
-            # Fetch news sentiment
-            raw_sentiment = self.ai_provider.get_news_sentiment(
-                topic=symbol.replace("USDT", ""),  # "BTCUSDT" → "BTC"
-                context=f"Trading analysis. RSI: {analysis.rsi}, Trend: {analysis.trend.value}"
-            )
-            sentiment = self.signal_validator.normalize_sentiment(raw_sentiment)
-            
-            logger.debug(f"News sentiment: {sentiment}")
-            
-            # Create technical context for AI
+
             technical_context = (
                 f"RSI: {analysis.rsi}, "
                 f"EMA200: {analysis.ema_200}, "
@@ -196,16 +177,26 @@ class TradeOrchestrator:
                 f"Trend: {analysis.trend.value}, "
                 f"Technical Signal: {technical_signal.action.value}"
             )
-            
-            # Get AI reasoning (News + Math synthesis)
-            ai_reasoning = self.ai_provider.get_reasoning(
-                symbol=symbol,
-                technical_context=technical_context
+            topic = symbol.replace("USDT", "")  # "BTCUSDT" → "BTC"
+
+            # Both Perplexity calls are synchronous HTTP — fire them concurrently
+            # in separate threads so neither blocks the event loop.
+            raw_sentiment, ai_reasoning = await asyncio.gather(
+                asyncio.to_thread(
+                    self.ai_provider.get_news_sentiment,
+                    topic=topic,
+                    context=f"Trading analysis. RSI: {analysis.rsi}, Trend: {analysis.trend.value}",
+                ),
+                asyncio.to_thread(
+                    self.ai_provider.get_reasoning,
+                    symbol=symbol,
+                    technical_context=technical_context,
+                ),
             )
-            
-            logger.debug(f"AI Reasoning: {ai_reasoning}")
-            
-            # Run Reality Check validation (isolated domain logic)
+
+            sentiment = self.signal_validator.normalize_sentiment(raw_sentiment)
+            logger.debug(f"AI Reality Check: sentiment={sentiment}")
+
             validation_result = self.signal_validator.reality_check(
                 ta_signal=technical_signal,
                 ai_sentiment_score=sentiment,
@@ -214,22 +205,24 @@ class TradeOrchestrator:
 
             if validation_result.status == ValidationStatus.CONTRADICTION:
                 logger.warning(
-                    f"Reality Check CONTRADICTION for {symbol}: {validation_result.reason}. "
-                    "Trade dropped."
+                    "Reality Check CONTRADICTION for %s: %s — trade dropped.",
+                    symbol, validation_result.reason,
                 )
             elif validation_result.status == ValidationStatus.HIGH_CONFIDENCE:
                 logger.info(
-                    f"Reality Check HIGH_CONFIDENCE for {symbol}: {validation_result.reason}. "
-                    "Trade approved with elevated confidence."
+                    "Reality Check HIGH_CONFIDENCE for %s: %s.",
+                    symbol, validation_result.reason,
                 )
             else:
-                logger.info(f"Reality Check APPROVED for {symbol}: {validation_result.reason}")
+                logger.info("Reality Check APPROVED for %s: %s.", symbol, validation_result.reason)
 
             return validation_result.output_signal
-        
-        except Exception as e:
-            logger.warning(f"AI Reality Check failed (using technical signal only): {str(e)}")
-            # Fallback: use technical signal unchanged
+
+        except Exception as exc:
+            logger.warning(
+                "AI Reality Check failed for %s — falling back to TA signal: %s",
+                symbol, exc,
+            )
             return technical_signal
     
 class RiskManager:

@@ -16,7 +16,7 @@ iniconfig==2.3.0
 jiter==0.12.0
 # numpy==2.2.6   # requires C build tools — uncomment when wheels exist for Python 3.14
 openai==2.16.0
-packaging==26.0
+packaging<25.0
 # pandas==3.0.0  # depends on numpy — uncomment alongside numpy
 pluggy==1.6.0
 pycryptodome==3.23.0
@@ -49,3 +49,7 @@ google-auth-oauthlib==1.2.0
 # Database
 motor==3.7.1
 email-validator==2.2.0
+
+# Rate limiting (NFR7)
+slowapi==0.1.9
+limits==3.13.0

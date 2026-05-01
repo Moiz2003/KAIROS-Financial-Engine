@@ -61,8 +61,8 @@ async def analyze_market(symbol: str, interval: str = "4h", limit: int = 200):
         container = get_container()
         orchestrator = container.get_orchestrator()
         
-        # Call orchestrator (single source of truth)
-        signal = orchestrator.get_trade_recommendation(
+        # Call orchestrator (single source of truth) — now fully async.
+        signal = await orchestrator.get_trade_recommendation(
             symbol=symbol,
             interval=interval,
             limit=limit,
