@@ -58,16 +58,29 @@ async def _log_event(
 # ---------------------------------------------------------------------------
 
 
+class DCAConfig(BaseModel):
+    total_amount: float = Field(..., gt=0, description="Total USDT to deploy across all tranches")
+    amount_per_trade: float = Field(..., gt=0, description="USDT notional per DCA tranche")
+    interval_hours: float = Field(..., gt=0, description="Hours between each tranche")
+
+
 class ExecuteTradeRequest(BaseModel):
     symbol: str = Field(..., min_length=2, max_length=20, description="e.g. BTCUSDT")
     action: str = Field(..., description="BUY or SELL")
+    amount: float = Field(..., gt=0, description="USDT notional the user wants to trade")
     interval: str = Field("4h", description="Kline interval for fresh TA fetch")
     limit: int = Field(200, ge=50, le=1000, description="Candles for fresh TA fetch")
     news_limit: int = Field(10, ge=1, le=30, description="Headlines for AI sentiment")
     account_balance: float = Field(
-        10_000.0, gt=0, description="Notional balance for risk gate (USDT)"
+        10_000.0, gt=0, description="Total account balance for risk gate (USDT)"
     )
     god_mode: bool = Field(False, description="Testing bypass: skip AI Risk Gate validation")
+    # Order-type extensions
+    order_type: str = Field("MARKET", description="MARKET or LIMIT")
+    limit_price: Optional[float] = Field(None, gt=0, description="Trigger price for LIMIT orders")
+    take_profit: Optional[float] = Field(None, gt=0, description="TP price for auto-close")
+    stop_loss: Optional[float] = Field(None, gt=0, description="SL price for auto-close")
+    dca_config: Optional[DCAConfig] = Field(None, description="DCA schedule (skips immediate execution)")
 
 
 # ---------------------------------------------------------------------------
@@ -224,9 +237,69 @@ async def execute_trade(
     if requested_action == TradeAction.HOLD:
         raise HTTPException(status_code=400, detail="Cannot request HOLD execution.")
 
-    logger.info(
-        "Trade execute request: %s %s by %s", requested_action.value, sym, user_id
-    )
+    # ── DCA path: save schedule and return immediately ────────────────
+    if body.dca_config is not None:
+        try:
+            job_id = await portfolio_manager.save_dca_job(
+                user_id=user_id,
+                job_data={
+                    "symbol": sym,
+                    "action": requested_action.value,
+                    "total_amount": body.dca_config.total_amount,
+                    "amount_per_trade": body.dca_config.amount_per_trade,
+                    "interval_hours": body.dca_config.interval_hours,
+                },
+            )
+            logger.info("DCA job scheduled: %s for %s/%s", job_id, user_id, sym)
+            return {
+                "status": "DCA_SCHEDULED",
+                "job_id": job_id,
+                "symbol": sym,
+                "action": requested_action.value,
+                "total_amount": body.dca_config.total_amount,
+                "amount_per_trade": body.dca_config.amount_per_trade,
+                "interval_hours": body.dca_config.interval_hours,
+            }
+        except Exception as exc:
+            logger.error("DCA job save failed for %s: %s", user_id, exc)
+            raise HTTPException(status_code=500, detail=f"Failed to schedule DCA job: {exc}")
+
+    # ── LIMIT order path: queue and return immediately ────────────────
+    if body.order_type.upper() == "LIMIT":
+        if not body.limit_price:
+            raise HTTPException(
+                status_code=400,
+                detail="limit_price is required for LIMIT orders.",
+            )
+        try:
+            order_id = await portfolio_manager.save_limit_order(
+                user_id=user_id,
+                order_data={
+                    "symbol": sym,
+                    "action": requested_action.value,
+                    "amount": body.amount,
+                    "limit_price": body.limit_price,
+                    "take_profit": body.take_profit,
+                    "stop_loss": body.stop_loss,
+                },
+            )
+            logger.info("Limit order queued: %s for %s/%s @ %.4f", order_id, user_id, sym, body.limit_price)
+            return {
+                "status": "PENDING",
+                "order_id": order_id,
+                "symbol": sym,
+                "action": requested_action.value,
+                "amount": body.amount,
+                "limit_price": body.limit_price,
+                "take_profit": body.take_profit,
+                "stop_loss": body.stop_loss,
+            }
+        except Exception as exc:
+            logger.error("Limit order save failed for %s: %s", user_id, exc)
+            raise HTTPException(status_code=500, detail=f"Failed to queue limit order: {exc}")
+
+    # ── MARKET order path: full TA → AI → Risk → Execute pipeline ─────
+    logger.info("Trade execute request: %s %s by %s", requested_action.value, sym, user_id)
 
     try:
         # STEP 2+3: TA and news fetch run concurrently
@@ -337,6 +410,7 @@ async def execute_trade(
             executor.execute_trade,
             execution_signal,
             sym,
+            body.amount,
             body.account_balance,
         )
 
@@ -345,12 +419,20 @@ async def execute_trade(
             f"Order {execution.order_id} executed @ {execution.fill_price:.4f} "
             f"qty={execution.quantity}"
         )
-        await asyncio.gather(
+        persist_tasks = [
             portfolio_manager.record_trade(user_id, execution, execution_signal, risk),
             portfolio_manager.update_position(user_id, execution),
             portfolio_manager.save_open_position(user_id, execution),
             _log_event(user_id, sym, execution.action.value, exec_msg, "EXECUTED"),
-        )
+        ]
+        # Register TP/SL watcher when the user supplied at least one target
+        if body.take_profit or body.stop_loss:
+            persist_tasks.append(
+                portfolio_manager.save_tp_sl_position(
+                    user_id, execution, body.take_profit, body.stop_loss
+                )
+            )
+        await asyncio.gather(*persist_tasks)
 
         logger.info(
             "Trade executed and persisted: %s %s order_id=%s",
@@ -379,3 +461,41 @@ async def execute_trade(
     except Exception as exc:
         logger.error("Unexpected trade error for %s/%s: %s", user_id, sym, exc)
         raise HTTPException(status_code=500, detail=f"Trade pipeline failed: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# GET /api/trades/pending-orders  — user's queued limit orders
+# ---------------------------------------------------------------------------
+
+
+@router.get("/pending-orders")
+async def get_pending_orders(
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Return all PENDING limit orders for the authenticated user."""
+    user_id = current_user["sub"]
+    try:
+        orders = await portfolio_manager.get_pending_limit_orders(user_id)
+        return {"user_id": user_id, "count": len(orders), "orders": orders}
+    except Exception as exc:
+        logger.error("Pending orders fetch failed for %s: %s", user_id, exc)
+        raise HTTPException(status_code=500, detail=f"Failed to fetch pending orders: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# GET /api/trades/dca-jobs  — user's active DCA schedules
+# ---------------------------------------------------------------------------
+
+
+@router.get("/dca-jobs")
+async def get_dca_jobs(
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Return all ACTIVE DCA jobs for the authenticated user."""
+    user_id = current_user["sub"]
+    try:
+        jobs = await portfolio_manager.get_dca_jobs(user_id)
+        return {"user_id": user_id, "count": len(jobs), "jobs": jobs}
+    except Exception as exc:
+        logger.error("DCA jobs fetch failed for %s: %s", user_id, exc)
+        raise HTTPException(status_code=500, detail=f"Failed to fetch DCA jobs: {exc}")

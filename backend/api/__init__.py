@@ -26,9 +26,12 @@ from api.routes.market import router as market_router
 from api.routes.trades import router as trades_router
 from api.routes.portfolio import router as portfolio_router
 from api.routes.admin import router as admin_router
+from api.routes.user import router as user_router
+from api.routes.ai_targets import router as ai_targets_router
 from core.binance_ws import stream_manager
 from core.ta_engine import ta_engine  # noqa: F401 — ensures singleton init at startup
 from core.ai_engine import ai_engine  # noqa: F401 — ensures singleton init at startup
+from domain.services.price_monitor import price_monitor
 
 # Initialize logging
 setup_logging(config.log_level, config.log_format)
@@ -52,7 +55,9 @@ async def lifespan(app: FastAPI):
         pass
 
     stream_manager.start()
+    price_monitor.start()
     yield
+    await price_monitor.stop()
     await stream_manager.stop()
     await Database.close()
 
@@ -102,7 +107,9 @@ def create_app() -> FastAPI:
     app.include_router(trades_router)
     app.include_router(portfolio_router)
     app.include_router(admin_router)
-    
+    app.include_router(user_router)
+    app.include_router(ai_targets_router)
+
     return app
 
 

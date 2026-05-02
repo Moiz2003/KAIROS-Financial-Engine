@@ -205,7 +205,7 @@ function PositionCard({ pos, idx, onClose, onAIConsult }) {
         </motion.button>
         <motion.button
           whileTap={{ scale: 0.96 }}
-          onClick={() => onClose(pos.id, pos.pnl)}
+          onClick={() => onClose(pos.id, pos.pnl, pos.currentPrice)}
           className="flex flex-1 items-center justify-center gap-2 rounded-2xl border border-neutral-700/50 bg-neutral-900/50 px-4 py-2.5 text-sm font-semibold text-neutral-400 transition-all hover:border-rose-500/30 hover:bg-rose-500/5 hover:text-rose-400"
         >
           <span className="text-base leading-none">🛑</span>
@@ -255,9 +255,9 @@ export default function PortfolioPage() {
   const winCount  = openPositions.filter(p => p.pnl > 0).length
   const lossCount = openPositions.filter(p => p.pnl < 0).length
 
-  const handleClosePosition = useCallback(async (id, pnl) => {
+  const handleClosePosition = useCallback(async (id, pnl, closePrice) => {
     try {
-      await apiDelete(`/api/portfolio/close/${id}`)
+      await apiDelete(`/api/portfolio/close/${id}?close_price=${closePrice ?? 0}`)
     } catch {
       // If the backend reports 404, the position is already gone — still clean up locally.
     }

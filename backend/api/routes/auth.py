@@ -21,6 +21,7 @@ from api.schemas.auth import (
     GoogleAuthRequest,
     LoginRequest,
     PasswordUpdateRequest,
+    ProfileUpdateRequest,
     UserProfile,
     UserRegistrationRequest,
 )
@@ -208,6 +209,8 @@ async def get_profile(current_user: dict = Depends(get_current_user)):
         role=current_user.get("role", Roles.VIEWER),
         sub=email,
         name=user.get("name", "") if user else "",
+        bio=user.get("bio", "") if user else "",
+        avatar_url=user.get("avatar_url", "") if user else "",
         iat=datetime.fromtimestamp(current_user["iat"], tz=timezone.utc),
         exp=datetime.fromtimestamp(current_user["exp"], tz=timezone.utc),
     )

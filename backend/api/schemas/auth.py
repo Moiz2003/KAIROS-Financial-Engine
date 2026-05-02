@@ -88,5 +88,12 @@ class UserProfile(BaseModel):
     role: str
     sub: str
     name: str
+    bio: str = ""
+    avatar_url: str = ""
     iat: datetime
     exp: datetime
+
+
+class ProfileUpdateRequest(BaseModel):
+    bio: str = ""
+    avatar_url: str = ""

@@ -8,6 +8,7 @@ Safety: Uses create_test_order by default (not new_order)
 """
 
 import os
+from decimal import Decimal, ROUND_DOWN
 from datetime import datetime
 from core.exceptions import TradeExecutionException
 from core.logging_config import get_logger
@@ -32,9 +33,9 @@ class TradeExecutor:
     Facade for executing trades on Binance.
 
     Responsibility:
-    1. Accept a TradeSignal
+    1. Accept a TradeSignal + USDT amount
     2. Run the FR26 risk gate (RiskManager.assess())
-    3. Calculate position size (hardcoded to 0.001 BTC for MVP)
+    3. Calculate quantity = amount / current_price, floored to exchange stepSize
     4. Send order to Binance using test_order (safe by default)
     5. Return ExecutionResult
 
@@ -43,7 +44,14 @@ class TradeExecutor:
     - Uses new_order_test by default (simulated, no real execution)
     """
 
-    POSITION_SIZE_BTC = 0.001
+    # Fallback step sizes (BTC=5 decimal places on Binance spot)
+    _STEP_SIZES: dict = {
+        "BTCUSDT": 0.00001,
+        "ETHUSDT": 0.0001,
+        "SOLUSDT": 0.01,
+        "BNBUSDT": 0.001,
+        "ADAUSDT": 1.0,
+    }
 
     def __init__(self, market_provider: IMarketDataProvider):
         # Belt-and-suspenders __init__ guard (FR26)
@@ -66,6 +74,7 @@ class TradeExecutor:
         self,
         signal: TradeSignal,
         symbol: str = "BTCUSDT",
+        amount: float = 500.0,
         account_balance: float = 10_000.0,
     ) -> ExecutionResult:
         """
@@ -76,16 +85,18 @@ class TradeExecutor:
         2. Validate signal (BUY or SELL only)
         3. FR26 Risk gate — RiskManager.assess() must approve
         4. Fetch current price from market provider
-        5. Send test order to Binance
-        6. Return ExecutionResult
+        5. quantity = amount / current_price, floored to exchange stepSize
+        6. Send test order to Binance
+        7. Return ExecutionResult
 
         Args:
             signal:          TradeSignal from the orchestration pipeline
             symbol:          Trading pair (default "BTCUSDT")
-            account_balance: Notional balance used by risk gate (default 10 000 USDT)
+            amount:          USDT notional the user wants to trade (default 500 USDT)
+            account_balance: Total account balance used by risk gate (default 10 000 USDT)
 
         Returns:
-            ExecutionResult: Order ID, status, price, timestamp
+            ExecutionResult: Order ID, status, price, quantity, timestamp
 
         Raises:
             TradeExecutionException: If risk gate rejects or order execution fails
@@ -123,11 +134,19 @@ class TradeExecutor:
                 logger.error(error_msg)
                 raise TradeExecutionException(error_msg)
 
-            # STEP 4: Send test order (quantity fixed at POSITION_SIZE_BTC for MVP)
-            quantity = self.POSITION_SIZE_BTC
+            # STEP 4: Calculate quantity from user-supplied USDT amount
+            step_size = self._get_step_size(symbol)
+            raw_quantity = float(amount) / float(current_price)
+            quantity = self._floor_to_step(raw_quantity, step_size)
+            if quantity <= 0:
+                raise TradeExecutionException(
+                    f"Calculated quantity {raw_quantity:.8f} is below minimum "
+                    f"stepSize {step_size} for {symbol}"
+                )
+            notional = quantity * float(current_price)
             logger.debug(
-                "Position size: %s BTC @ %s = %s USDT",
-                quantity, current_price, quantity * float(current_price),
+                "Position size: %.8f %s @ %s = %.4f USDT (requested %.2f USDT)",
+                quantity, symbol, current_price, notional, amount,
             )
             try:
                 order_result = self._send_test_order(
@@ -165,6 +184,28 @@ class TradeExecutor:
             error_msg = f"Unexpected error during trade execution: {str(e)}"
             logger.error(error_msg)
             raise TradeExecutionException(error_msg)
+
+    def _get_step_size(self, symbol: str) -> float:
+        """Return the LOT_SIZE stepSize for *symbol* from Binance, or a known default."""
+        try:
+            binance_client = self.market_provider.client
+            info = binance_client.exchange_info(symbol=symbol)
+            for f in info.get("filters", []):
+                if f.get("filterType") == "LOT_SIZE":
+                    step = float(f["stepSize"])
+                    if step > 0:
+                        return step
+        except Exception as exc:
+            logger.warning("Could not fetch stepSize for %s, using default: %s", symbol, exc)
+        return self._STEP_SIZES.get(symbol, 0.00001)
+
+    @staticmethod
+    def _floor_to_step(quantity: float, step_size: float) -> float:
+        """Floor *quantity* down to the nearest valid *step_size* increment."""
+        step = Decimal(str(step_size))
+        qty = Decimal(str(quantity))
+        floored = (qty / step).to_integral_value(rounding=ROUND_DOWN) * step
+        return float(floored)
 
     def _send_test_order(
         self, symbol: str, side: str, quantity: float, price: float

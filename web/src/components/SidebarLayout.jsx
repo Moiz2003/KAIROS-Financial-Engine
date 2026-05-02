@@ -12,6 +12,7 @@ import {
   Wallet,
   Brain,
   Terminal,
+  History,
   LogOut,
   User,
   Settings,
@@ -20,13 +21,15 @@ import {
   PanelLeftOpen,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
-import ComingSoonModal from './ComingSoonModal'
+import ProfileModal from './ProfileModal'
+import SettingsModal from './SettingsModal'
 
 const NAV_ITEMS = [
-  { to: '/dashboard/market',       label: 'Market Feed',   icon: Activity, accent: 'emerald' },
-  { to: '/dashboard/portfolio',    label: 'Portfolio',     icon: Wallet,   accent: 'violet'  },
-  { to: '/dashboard/intelligence', label: 'Intelligence',  icon: Brain,    accent: 'cyan'    },
-  { to: '/dashboard/terminal',     label: 'Trade Terminal', icon: Terminal, accent: 'rose'   },
+  { to: '/dashboard/market',       label: 'Market Feed',    icon: Activity, accent: 'emerald' },
+  { to: '/dashboard/portfolio',    label: 'Portfolio',      icon: Wallet,   accent: 'violet'  },
+  { to: '/dashboard/history',      label: 'Trade History',  icon: History,  accent: 'cyan'    },
+  { to: '/dashboard/intelligence', label: 'Intelligence',   icon: Brain,    accent: 'cyan'    },
+  { to: '/dashboard/terminal',     label: 'Trade Terminal', icon: Terminal, accent: 'rose'    },
 ]
 
 const ACCENT_TEXT = {
@@ -270,7 +273,18 @@ export default function SidebarLayout() {
                 aria-label="User menu"
                 className="flex items-center gap-2 rounded-full border border-white/5 bg-neutral-900/60 py-1 pl-1 pr-3 transition hover:border-emerald-500/30 hover:bg-neutral-900"
               >
-                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-cyan-500 text-xs font-bold text-neutral-950">
+                {user?.avatar_url ? (
+                  <img
+                    src={user.avatar_url}
+                    alt="avatar"
+                    className="h-8 w-8 rounded-full object-cover border border-emerald-500/30"
+                    onError={e => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex' }}
+                  />
+                ) : null}
+                <span
+                  className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-cyan-500 text-xs font-bold text-neutral-950"
+                  style={{ display: user?.avatar_url ? 'none' : 'flex' }}
+                >
                   {initials}
                 </span>
                 <span className="hidden max-w-[120px] truncate text-xs font-semibold text-neutral-300 sm:inline">
@@ -345,17 +359,8 @@ export default function SidebarLayout() {
         </main>
       </div>
 
-      {/* Coming-soon modals */}
-      <ComingSoonModal
-        open={modal === 'profile'}
-        title="Profile · Coming Soon"
-        onClose={() => setModal(null)}
-      />
-      <ComingSoonModal
-        open={modal === 'settings'}
-        title="Settings · Coming Soon"
-        onClose={() => setModal(null)}
-      />
+      <ProfileModal open={modal === 'profile'} onClose={() => setModal(null)} />
+      <SettingsModal open={modal === 'settings'} onClose={() => setModal(null)} />
     </div>
   )
 }

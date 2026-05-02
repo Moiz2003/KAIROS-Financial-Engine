@@ -82,18 +82,38 @@ async def get_all_positions(
 @router.delete("/close/{position_id}")
 async def close_position(
     position_id: str,
+    close_price: float = Query(..., description="Current mark price at time of close"),
     current_user: dict = Depends(get_current_user),
 ) -> dict:
     """
-    Close an open position by deleting it from the open_positions collection.
-    The frontend must call this before removing the card from local state.
+    Archive an open position to trade_history (with realized PnL), then delete it.
+    close_price must be supplied by the frontend (the live mark price).
     """
     user_id = current_user["sub"]
-    deleted = await portfolio_manager.close_position(user_id, position_id)
-    if not deleted:
+    archived = await portfolio_manager.close_position(user_id, position_id, close_price)
+    if not archived:
         raise HTTPException(status_code=404, detail="Position not found or already closed")
-    logger.info("Position %s closed by user %s", position_id, user_id)
+    logger.info("Position %s archived by user %s at price %.4f", position_id, user_id, close_price)
     return {"status": "closed", "position_id": position_id}
+
+
+@router.get("/history")
+async def get_trade_history(
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """
+    Return all closed trades from trade_history (newest first) plus
+    aggregated stats: total_realized_pnl, win_rate, total_trades.
+    """
+    user_id = current_user["sub"]
+    try:
+        data = await portfolio_manager.get_closed_trade_history(user_id)
+        return data
+    except Exception as exc:
+        logger.error("Trade history fetch failed for %s: %s", user_id, exc)
+        raise HTTPException(
+            status_code=500, detail=f"Failed to fetch trade history: {exc}"
+        )
 
 
 @router.get("/summary")

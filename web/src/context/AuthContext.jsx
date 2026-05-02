@@ -1,11 +1,19 @@
 import { createContext, useContext, useEffect, useState } from 'react'
-import { apiGet, apiPost } from '../lib/api'
+import { apiGet, apiPost, apiPut } from '../lib/api'
 
 const AuthContext = createContext(null)
 
+const _buildUser = (data) => ({
+  email: data.email,
+  role: data.role,
+  name: data.name,
+  bio: data.bio ?? '',
+  avatar_url: data.avatar_url ?? '',
+})
+
 export function AuthProvider({ children }) {
   // null  = not authenticated
-  // object = { email, role, name }
+  // object = { email, role, name, bio, avatar_url }
   const [user, setUser] = useState(null)
 
   // true while the initial /me check is in-flight.
@@ -14,29 +22,31 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // Verify the HTTP-only cookie on every cold page load.
-    // If the cookie is missing or expired, /me returns 401 and we stay logged out.
     apiGet('/api/auth/me')
-      .then(data => setUser({ email: data.email, role: data.role, name: data.name }))
+      .then(data => setUser(_buildUser(data)))
       .catch(() => setUser(null))
       .finally(() => setLoading(false))
   }, [])
 
   // Called after a successful /login or /google response.
-  // data shape: AuthSuccessResponse { role, email, name, expires_in_minutes }
-  // The JWT is already stored in the HTTP-only cookie — nothing to persist here.
   const login = (data) => {
-    setUser({ email: data.email, role: data.role, name: data.name })
+    setUser(_buildUser(data))
   }
 
-  // Calls the backend to expire the cookie, then clears local state.
+  // Persists bio/avatar_url to the backend and syncs local state immediately.
+  const updateProfile = async ({ bio, avatar_url }) => {
+    const updated = await apiPut('/api/user/profile', { bio, avatar_url })
+    setUser(prev => ({ ...prev, bio: updated.bio, avatar_url: updated.avatar_url }))
+    return updated
+  }
+
   const logout = async () => {
     await apiPost('/api/auth/logout').catch(() => {})
     setUser(null)
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, updateProfile }}>
       {children}
     </AuthContext.Provider>
   )

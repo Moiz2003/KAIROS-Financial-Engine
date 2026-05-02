@@ -2,6 +2,7 @@
 Market data endpoints — WebSocket stream relay and system health check.
 
 Endpoints:
+  GET /api/market/price     — current spot price for a symbol (BinanceAdapter)
   GET /api/market/analysis  — latest TA result from TAEngine buffer
   GET /api/health           — connectivity check for Binance + AI provider
   WS  /api/market/stream    — streams normalised ticker + kline events
@@ -10,15 +11,53 @@ Endpoints:
 import asyncio
 import os
 
-from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 
 from core.binance_ws import stream_manager
+from core.di_container import get_container
 from core.logging_config import get_logger
 from core.rate_limiter import limiter
 from core.ta_engine import ta_engine
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/api/market", tags=["market"])
+
+
+@router.get("/price")
+@limiter.limit("120/minute")
+async def get_price(
+    request: Request,
+    symbol: str = Query("BTCUSDT", min_length=2, max_length=20, description="Trading pair e.g. BTCUSDT"),
+) -> dict:
+    """
+    Return the current spot price for any supported symbol.
+
+    Resolution order:
+      1. BinanceAdapter.get_current_price() — live REST call (most accurate)
+      2. TAEngine buffer — cached price from the last closed candle (fallback)
+
+    No authentication required — market prices are public data.
+    """
+    sym = symbol.upper().strip()
+
+    # Prefer a live REST fetch via the BinanceAdapter
+    try:
+        container = get_container()
+        adapter = container.get_binance_adapter()
+        price = float(await asyncio.to_thread(adapter.get_current_price, sym))
+        return {"symbol": sym, "price": price, "source": "live"}
+    except Exception as live_exc:
+        logger.warning("BinanceAdapter price fetch failed for %s: %s — trying TAEngine cache", sym, live_exc)
+
+    # Fallback: use whatever price the TAEngine last cached
+    latest = ta_engine.get_latest_analysis()
+    if latest is not None:
+        return {"symbol": latest.symbol, "price": latest.price, "source": "cached"}
+
+    raise HTTPException(
+        status_code=503,
+        detail=f"Price unavailable for {sym} — Binance unreachable and TAEngine buffer not yet warm.",
+    )
 
 
 @router.get("/analysis")
