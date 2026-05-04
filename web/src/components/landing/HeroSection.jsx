@@ -1,6 +1,8 @@
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { ChevronDown } from 'lucide-react'
+import VideoModal from '../VideoModal'
 
 // ─── Inline Aurora Background ────────────────────────────────────────────────
 function AuroraBackground({ children }) {
@@ -94,6 +96,7 @@ function TextGenerateEffect({ text, className }) {
 // ─── Main Hero Section ────────────────────────────────────────────────────────
 export default function HeroSection() {
   const navigate = useNavigate()
+  const [videoOpen, setVideoOpen] = useState(false)
 
   const scrollToProduct = () => {
     document.getElementById('product')?.scrollIntoView({ behavior: 'smooth' })
@@ -173,12 +176,15 @@ export default function HeroSection() {
           <motion.button
             whileHover={{ scale: 1.02, borderColor: 'rgb(113 113 122)' }}
             whileTap={{ scale: 0.98 }}
-            onClick={scrollToProduct}
+            onClick={() => setVideoOpen(true)}
             className="border border-zinc-700 hover:border-zinc-500 text-zinc-300 hover:text-white px-8 py-4 rounded-xl text-lg transition-all duration-200"
           >
             Watch Demo
           </motion.button>
         </motion.div>
+
+        {/* Demo Video Modal */}
+        <VideoModal isOpen={videoOpen} onClose={() => setVideoOpen(false)} />
 
         {/* Stats strip */}
         <motion.div
