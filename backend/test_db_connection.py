@@ -32,10 +32,10 @@ async def main():
             print(f"   - {u.get('email')} (role: {u.get('role')})")
     
     # Try to create admin user
-    email = os.getenv("ADMIN_EMAIL", "admin@kairos.local")
+    email = os.getenv("ADMIN_EMAIL")
     password = os.getenv("ADMIN_PASSWORD")
-    if not password:
-        print("4. ⚠️  ADMIN_PASSWORD env var not set — skipping user creation/test")
+    if not email or not password:
+        print("4. ⚠️  ADMIN_EMAIL / ADMIN_PASSWORD env vars not set — skipping user creation/test")
         await Database.close()
         return
     existing = await users_coll.find_one({"email": email})
