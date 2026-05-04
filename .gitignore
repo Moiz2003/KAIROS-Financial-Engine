@@ -23,6 +23,11 @@ backend/*.pyc
 backend/.coverage
 backend/htmlcov/
 backend/.env.local
+backend/login.json
+
+# Frontend
+web/.env
+web/.env.*
 
 # iOS
 ios/*.xcuserdata
