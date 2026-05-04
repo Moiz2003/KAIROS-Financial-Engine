@@ -1,5 +1,6 @@
 """Test MongoDB connection and auth flow."""
 import asyncio
+import os
 import sys
 sys.stdout.reconfigure(encoding='utf-8')
 
@@ -31,8 +32,12 @@ async def main():
             print(f"   - {u.get('email')} (role: {u.get('role')})")
     
     # Try to create admin user
-    email = "admin@kairos.local"
-    password = "admin123"
+    email = os.getenv("ADMIN_EMAIL", "admin@kairos.local")
+    password = os.getenv("ADMIN_PASSWORD")
+    if not password:
+        print("4. ⚠️  ADMIN_PASSWORD env var not set — skipping user creation/test")
+        await Database.close()
+        return
     existing = await users_coll.find_one({"email": email})
     
     if existing:

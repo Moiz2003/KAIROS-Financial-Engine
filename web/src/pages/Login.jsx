@@ -239,7 +239,7 @@ function Login() {
                             type="email"
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
-                            placeholder="admin@kairos.local"
+                            placeholder="you@example.com"
                             hasError={!!error}
                             delay={0.15}
                         />
