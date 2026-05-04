@@ -103,13 +103,12 @@ async def _build_ta_signal_fresh(
     signal_generator = SignalGenerator(confidence_threshold=0.65)
 
     klines, current_price_raw = await asyncio.gather(
-        asyncio.to_thread(
-            market_provider.get_klines,
+        market_provider.get_klines(
             symbol=symbol,
             interval=interval,
             limit=limit,
         ),
-        asyncio.to_thread(market_provider.get_current_price, symbol),
+        market_provider.get_current_price(symbol),
     )
 
     prices = [float(k[4]) for k in klines]

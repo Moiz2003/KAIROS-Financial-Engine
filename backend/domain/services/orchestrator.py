@@ -89,16 +89,15 @@ class TradeOrchestrator:
         try:
             logger.info(f"Orchestrating trade recommendation for {symbol}")
 
-            # STEP 1: Fetch market data — both are blocking HTTP; run in thread pool.
+            # STEP 1: Fetch market data — both are native async; run concurrently.
             logger.debug(f"Step 1: Fetching {limit} {interval} candles for {symbol}")
             klines, price_data = await asyncio.gather(
-                asyncio.to_thread(
-                    self.market_provider.get_klines,
+                self.market_provider.get_klines(
                     symbol=symbol,
                     interval=interval,
                     limit=limit,
                 ),
-                asyncio.to_thread(self.market_provider.get_current_price, symbol),
+                self.market_provider.get_current_price(symbol),
             )
 
             prices = [float(kline[4]) for kline in klines]  # index 4 = close

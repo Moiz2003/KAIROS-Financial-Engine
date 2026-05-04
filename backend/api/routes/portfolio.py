@@ -157,7 +157,7 @@ async def get_portfolio_summary(
             binance = container.get_binance_adapter()
             unique_symbols = list({p["symbol"] for p in positions})
             price_results = await asyncio.gather(
-                *[asyncio.to_thread(binance.get_current_price, s) for s in unique_symbols],
+                *[binance.get_current_price(s) for s in unique_symbols],
                 return_exceptions=True,
             )
             live_prices: dict[str, Optional[float]] = {

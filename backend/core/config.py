@@ -57,7 +57,15 @@ class Config:
         self.log_format: str = os.getenv("LOG_FORMAT", "json")
         
         # JWT / Authentication Configuration
-        self.jwt_secret_key: str = os.getenv("JWT_SECRET_KEY", "change-me-in-production")
+        _jwt_secret = os.getenv("JWT_SECRET_KEY", "")
+        _KNOWN_INSECURE_DEFAULTS = {"", "change-me-in-production", "secret", "changeme"}
+        if _jwt_secret in _KNOWN_INSECURE_DEFAULTS:
+            raise ValueError(
+                "FATAL: JWT_SECRET_KEY environment variable is missing or set to an insecure "
+                "default value. Halting startup to prevent insecure token generation. "
+                "Set a strong, random secret in your .env file."
+            )
+        self.jwt_secret_key: str = _jwt_secret
         self.jwt_algorithm: str = os.getenv("JWT_ALGORITHM", "HS256")
         self.jwt_access_token_expire_minutes: int = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
         self.google_oauth_client_id: str = os.getenv("GOOGLE_OAUTH_CLIENT_ID", "")

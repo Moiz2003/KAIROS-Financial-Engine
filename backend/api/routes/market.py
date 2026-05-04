@@ -44,7 +44,7 @@ async def get_price(
     try:
         container = get_container()
         adapter = container.get_binance_adapter()
-        price = float(await asyncio.to_thread(adapter.get_current_price, sym))
+        price = float(await adapter.get_current_price(sym))
         return {"symbol": sym, "price": price, "source": "live"}
     except Exception as live_exc:
         logger.warning("BinanceAdapter price fetch failed for %s: %s — trying TAEngine cache", sym, live_exc)
@@ -108,7 +108,7 @@ async def health_check(request: Request) -> dict:
     try:
         container = get_container()
         adapter = container.get_binance_adapter()
-        price = await asyncio.to_thread(adapter.get_current_price, "BTCUSDT")
+        price = await adapter.get_current_price("BTCUSDT")
         results["binance"] = {"status": "ok", "btc_price": float(price)}
     except Exception as exc:
         results["binance"] = {"status": "error", "detail": str(exc)}

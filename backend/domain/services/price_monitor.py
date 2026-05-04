@@ -108,7 +108,7 @@ class PriceMonitorService:
         # Fetch all required prices in parallel
         sym_list = list(symbols)
         results = await asyncio.gather(
-            *[asyncio.to_thread(market_provider.get_current_price, s) for s in sym_list],
+            *[market_provider.get_current_price(s) for s in sym_list],
             return_exceptions=True,
         )
         prices: dict[str, float] = {}

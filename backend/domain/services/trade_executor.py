@@ -70,7 +70,7 @@ class TradeExecutor:
 
         logger.info("TradeExecutor initialized with market data provider")
 
-    def execute_trade(
+    async def execute_trade(
         self,
         signal: TradeSignal,
         symbol: str = "BTCUSDT",
@@ -127,7 +127,7 @@ class TradeExecutor:
 
             # STEP 3: Get current price
             try:
-                current_price = self.market_provider.get_current_price(symbol)
+                current_price = await self.market_provider.get_current_price(symbol)
                 logger.debug(f"Current {symbol} price: {current_price}")
             except Exception as e:
                 error_msg = f"Failed to get current price for {symbol}: {str(e)}"

@@ -43,13 +43,12 @@ async def _build_ta_signal(symbol: str, interval: str = "4h", limit: int = 200) 
     analyzer = MarketAnalyzer()
 
     klines, current_price_raw = await asyncio.gather(
-        asyncio.to_thread(
-            market_provider.get_klines,
+        market_provider.get_klines(
             symbol=symbol,
             interval=interval,
             limit=limit,
         ),
-        asyncio.to_thread(market_provider.get_current_price, symbol),
+        market_provider.get_current_price(symbol),
     )
 
     current_price = float(current_price_raw)

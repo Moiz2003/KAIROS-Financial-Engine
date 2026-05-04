@@ -109,7 +109,7 @@ async def execute_trade(request: TradeExecutionRequest) -> ExecutionResponse:
         
         # STEP 4: Execute trade via TradeExecutor
         try:
-            execution_result = trade_executor.execute_trade(signal, symbol)
+            execution_result = await trade_executor.execute_trade(signal, symbol)
             logger.info(f"Trade executed: {execution_result.order_id}")
         except TradeExecutionException as e:
             error_msg = f"Trade execution failed: {str(e)}"

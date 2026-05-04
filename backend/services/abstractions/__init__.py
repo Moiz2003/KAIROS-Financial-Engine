@@ -19,7 +19,7 @@ class IMarketDataProvider(ABC):
     """
     
     @abstractmethod
-    def get_klines(
+    async def get_klines(
         self,
         symbol: str,
         interval: str,
@@ -27,25 +27,25 @@ class IMarketDataProvider(ABC):
     ) -> List[List]:
         """
         Fetch candlestick data.
-        
+
         Args:
             symbol: Trading pair (e.g., "BTCUSDT")
             interval: Kline interval (e.g., "4h")
             limit: Number of candles to fetch
-        
+
         Returns:
             List of [time, open, high, low, close, volume, ...]
         """
         pass
-    
+
     @abstractmethod
-    def get_current_price(self, symbol: str) -> float:
+    async def get_current_price(self, symbol: str) -> float:
         """
         Fetch current price.
-        
+
         Args:
             symbol: Trading pair
-        
+
         Returns:
             Current price
         """

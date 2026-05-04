@@ -1,12 +1,26 @@
 """
 NFR7: Rate limiting singleton using slowapi.
 
-Key function is get_remote_address (IP-based) by default.
-For authenticated endpoints the decorator can override key_func on a per-route
-basis, but IP-based limits are sufficient for the current deployment model.
+Key function resolves the real client IP behind reverse proxies by checking
+X-Forwarded-For and X-Real-IP headers before falling back to request.client.host.
 """
 
+from fastapi import Request
 from slowapi import Limiter
-from slowapi.util import get_remote_address
 
-limiter = Limiter(key_func=get_remote_address)
+
+def get_real_ip(request: Request) -> str:
+    # X-Forwarded-For may be a comma-separated chain: client, proxy1, proxy2, ...
+    # The leftmost entry is the originating client.
+    forwarded_for = request.headers.get("X-Forwarded-For")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
+
+    real_ip = request.headers.get("X-Real-IP")
+    if real_ip:
+        return real_ip.strip()
+
+    return request.client.host if request.client else "unknown"
+
+
+limiter = Limiter(key_func=get_real_ip)

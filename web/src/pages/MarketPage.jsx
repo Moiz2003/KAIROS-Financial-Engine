@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useProMode } from '../context/ProModeContext'
 
 const wsBase = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/^http/, 'ws')
 const wsUrl = `${wsBase}/api/market/stream`
@@ -50,27 +51,37 @@ function useMarketWS() {
 }
 
 const statusConfig = {
-  connected: { dot: 'bg-emerald-400', pulse: true, label: 'Live', text: 'text-emerald-400' },
-  connecting: { dot: 'bg-amber-400', pulse: true, label: 'Connecting', text: 'text-amber-400' },
-  disconnected: { dot: 'bg-rose-500', pulse: false, label: 'Disconnected', text: 'text-rose-400' },
+  connected:    { dot: 'bg-emerald-400', pulse: true,  label: 'Live',         text: 'text-emerald-400' },
+  connecting:   { dot: 'bg-amber-400',   pulse: true,  label: 'Connecting',   text: 'text-amber-400'   },
+  disconnected: { dot: 'bg-rose-500',    pulse: false, label: 'Disconnected', text: 'text-rose-400'    },
 }
 
-function StatCard({ label, value, color = 'text-neutral-100', sub }) {
+function StatCard({ label, value, color = 'text-neutral-100', sub, isPro }) {
   return (
     <motion.div
-      whileHover={{ y: -2, borderColor: 'rgba(255,255,255,0.1)' }}
+      whileHover={{
+        y: -2,
+        borderColor: isPro ? 'rgba(127,29,29,0.5)' : 'rgba(255,255,255,0.1)',
+      }}
       transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-      className="rounded-2xl border border-white/5 bg-neutral-950/50 p-4"
+      className={`p-4 ${
+        isPro
+          ? 'rounded-lg border border-red-900/30 bg-black/80 backdrop-blur-xl'
+          : 'rounded-2xl border border-white/5 bg-neutral-950/50'
+      }`}
     >
-      <p className="mb-1 text-[10px] uppercase tracking-widest text-neutral-600">{label}</p>
-      <p className={`text-xl font-bold tabular-nums ${color}`}>{value}</p>
-      {sub && <p className="mt-0.5 text-[10px] text-neutral-700">{sub}</p>}
+      <p className={`mb-1 text-[10px] uppercase tracking-widest ${isPro ? 'text-red-900/60' : 'text-neutral-600'}`}>
+        {label}
+      </p>
+      <p className={`text-xl font-bold tabular-nums ${isPro ? 'font-mono' : ''} ${color}`}>{value}</p>
+      {sub && <p className={`mt-0.5 text-[10px] ${isPro ? 'text-red-950/50' : 'text-neutral-700'}`}>{sub}</p>}
     </motion.div>
   )
 }
 
 export default function MarketPage() {
   const { ticker, kline, status } = useMarketWS()
+  const { isProMode } = useProMode()
   const cfg = statusConfig[status]
   const parseNum = (s) => parseFloat((s ?? '0').replace(/,/g, ''))
   const priceUp = kline ? parseNum(kline.close) >= parseNum(kline.open) : true
@@ -80,63 +91,129 @@ export default function MarketPage() {
 
       {/* Status banner */}
       <div className="flex items-center gap-2">
-        <span className={`h-2 w-2 rounded-full ${cfg.dot} ${cfg.pulse ? 'animate-pulse' : ''}`} />
-        <span className={`text-xs font-semibold ${cfg.text}`}>{cfg.label}</span>
-        <span className="text-xs text-neutral-700">· BTC/USDT Binance WebSocket</span>
+        {isProMode ? (
+          <>
+            <motion.span
+              animate={{ opacity: [1, 0.2, 1] }}
+              transition={{ duration: 0.9, repeat: Infinity, ease: 'easeInOut' }}
+              className={`h-2 w-2 rounded-full ${cfg.dot} shadow-[0_0_6px_2px_rgba(239,68,68,0.5)]`}
+            />
+            <span className={`text-xs font-bold uppercase tracking-[0.18em] ${cfg.text}`}>{cfg.label}</span>
+            <span className="text-xs text-red-900/50">
+              · BTC/USDT · Binance WebSocket ·{' '}
+              <span className="text-red-700/70 font-semibold">PRO FEED</span>
+            </span>
+          </>
+        ) : (
+          <>
+            <span className={`h-2 w-2 rounded-full ${cfg.dot} ${cfg.pulse ? 'animate-pulse' : ''}`} />
+            <span className={`text-xs font-semibold ${cfg.text}`}>{cfg.label}</span>
+            <span className="text-xs text-neutral-700">· BTC/USDT Binance WebSocket</span>
+          </>
+        )}
       </div>
 
       {/* Price hero */}
-      <div className="relative overflow-hidden rounded-3xl border border-white/5 bg-neutral-900/30 p-8 backdrop-blur-2xl shadow-xl shadow-black/30">
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-emerald-400/30 to-transparent" />
+      <div className={`relative overflow-hidden backdrop-blur-2xl p-8 ${
+        isProMode
+          ? 'rounded-xl border border-red-900/50 bg-black/95 shadow-[0_0_40px_rgba(220,38,38,0.08),0_20px_60px_rgba(0,0,0,0.8)]'
+          : 'rounded-3xl border border-white/5 bg-neutral-900/30 shadow-xl shadow-black/30'
+      }`}>
+        {isProMode ? (
+          <>
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-red-600/50 to-transparent" />
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-red-900/25 to-transparent" />
+            <div className="pointer-events-none absolute inset-y-0 left-0 w-px bg-gradient-to-b from-transparent via-red-900/20 to-transparent" />
+            <div className="pointer-events-none absolute -top-16 left-1/2 h-40 w-72 -translate-x-1/2 rounded-full bg-red-700/6 blur-3xl" />
+          </>
+        ) : (
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-emerald-400/30 to-transparent" />
+        )}
 
-        <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.25em] text-neutral-600">
-          BTC / USDT · Last Price
+        <p className={`mb-2 text-[10px] font-semibold uppercase tracking-[0.25em] ${isProMode ? 'text-red-700/60' : 'text-neutral-600'}`}>
+          {isProMode ? 'BTC / USDT · LIVE PRICE FEED' : 'BTC / USDT · Last Price'}
         </p>
 
         {ticker ? (
-          <AnimatePresence mode="wait">
-            <motion.p
-              key={ticker.price}
-              initial={{ opacity: 0.4, y: -6 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.15 }}
-              className={`text-6xl font-extrabold tabular-nums tracking-tight ${priceUp ? 'text-emerald-400' : 'text-rose-400'}`}
-            >
-              ${ticker.price}
-            </motion.p>
-          </AnimatePresence>
+          <motion.div
+            animate={isProMode ? { opacity: [0.88, 1, 0.88] } : {}}
+            transition={isProMode ? { duration: 2.8, repeat: Infinity, ease: 'easeInOut' } : {}}
+          >
+            <AnimatePresence mode="wait">
+              <motion.p
+                key={ticker.price}
+                initial={{ opacity: 0.4, y: -6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.15 }}
+                className={`font-extrabold tabular-nums tracking-tight ${
+                  isProMode
+                    ? `text-5xl font-mono ${priceUp ? 'text-emerald-400' : 'text-red-400'}`
+                    : `text-6xl ${priceUp ? 'text-emerald-400' : 'text-rose-400'}`
+                }`}
+                style={isProMode ? {
+                  textShadow: priceUp
+                    ? '0 0 28px rgba(52,211,153,0.5)'
+                    : '0 0 28px rgba(220,38,38,0.5)',
+                } : {}}
+              >
+                ${ticker.price}
+              </motion.p>
+            </AnimatePresence>
+          </motion.div>
         ) : (
           <div className="animate-pulse">
-            <div className="h-16 w-64 rounded-xl bg-neutral-800" />
+            <div className={`h-16 w-64 rounded-xl ${isProMode ? 'bg-zinc-900' : 'bg-neutral-800'}`} />
           </div>
         )}
 
-        {/* Bid / Ask / Spread */}
         {ticker && (
-          <div className="mt-6 grid grid-cols-3 gap-4 sm:grid-cols-3">
-            <StatCard label="Bid" value={`$${ticker.bid}`} color="text-emerald-400" />
-            <StatCard label="Ask" value={`$${ticker.ask}`} color="text-rose-400" />
-            <StatCard label="Spread" value={`$${ticker.spread}`} />
+          <div className="mt-6 grid grid-cols-3 gap-4">
+            <StatCard label="Bid"    value={`$${ticker.bid}`}    color={isProMode ? 'text-emerald-400' : 'text-emerald-400'} isPro={isProMode} />
+            <StatCard label="Ask"    value={`$${ticker.ask}`}    color={isProMode ? 'text-red-400'     : 'text-rose-400'}    isPro={isProMode} />
+            <StatCard label="Spread" value={`$${ticker.spread}`} color={isProMode ? 'text-zinc-200'    : 'text-neutral-100'} isPro={isProMode} />
           </div>
         )}
       </div>
 
       {/* 1m Candle */}
       {kline && (
-        <div className="relative overflow-hidden rounded-3xl border border-white/5 bg-neutral-900/30 p-6 backdrop-blur-2xl shadow-xl shadow-black/30">
-          <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+        <div className={`relative overflow-hidden backdrop-blur-2xl p-6 ${
+          isProMode
+            ? 'rounded-xl border border-red-900/40 bg-black/90 shadow-[0_0_20px_rgba(0,0,0,0.8)]'
+            : 'rounded-3xl border border-white/5 bg-neutral-900/30 shadow-xl shadow-black/30'
+        }`}>
+          {isProMode ? (
+            <>
+              <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-red-800/35 to-transparent" />
+              <div className="pointer-events-none absolute inset-y-0 left-0 w-px bg-gradient-to-b from-transparent via-red-900/15 to-transparent" />
+            </>
+          ) : (
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+          )}
 
           <div className="mb-5 flex items-center justify-between">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.25em] text-neutral-600">
-              1 Minute Candle · OHLC
+            <p className={`text-[10px] font-semibold uppercase tracking-[0.25em] ${isProMode ? 'text-red-700/55' : 'text-neutral-600'}`}>
+              {isProMode ? '1M CANDLE · OHLC DATA' : '1 Minute Candle · OHLC'}
             </p>
             <div className="flex items-center gap-2">
               {kline.closed && (
-                <span className="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-[10px] font-semibold text-emerald-400">
+                <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${
+                  isProMode
+                    ? 'border border-emerald-900/40 bg-emerald-950/40 text-emerald-500'
+                    : 'bg-emerald-500/15 text-emerald-400'
+                }`}>
                   Closed
                 </span>
               )}
-              <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${priceUp ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
+              <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${
+                isProMode
+                  ? (priceUp
+                      ? 'border border-emerald-900/30 bg-emerald-950/30 text-emerald-500'
+                      : 'border border-red-900/30 bg-red-950/30 text-red-400')
+                  : (priceUp
+                      ? 'bg-emerald-500/10 text-emerald-400'
+                      : 'bg-rose-500/10 text-rose-400')
+              }`}>
                 {priceUp ? '▲ Bullish' : '▼ Bearish'}
               </span>
             </div>
@@ -144,32 +221,47 @@ export default function MarketPage() {
 
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             {[
-              { label: 'Open', value: kline.open, color: 'text-neutral-300' },
-              { label: 'High', value: kline.high, color: 'text-emerald-400' },
-              { label: 'Low', value: kline.low, color: 'text-rose-400' },
-              { label: 'Close', value: kline.close, color: priceUp ? 'text-emerald-400' : 'text-rose-400' },
+              { label: 'Open',  value: kline.open,  color: isProMode ? 'text-zinc-300'    : 'text-neutral-300' },
+              { label: 'High',  value: kline.high,  color: isProMode ? 'text-emerald-400' : 'text-emerald-400' },
+              { label: 'Low',   value: kline.low,   color: isProMode ? 'text-red-400'     : 'text-rose-400'    },
+              { label: 'Close', value: kline.close, color: priceUp
+                  ? (isProMode ? 'text-emerald-400' : 'text-emerald-400')
+                  : (isProMode ? 'text-red-400'     : 'text-rose-400')
+              },
             ].map(({ label, value, color }) => (
               <motion.div
                 key={label}
                 whileHover={{ y: -2 }}
                 transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-                className="rounded-2xl border border-white/5 bg-neutral-950/60 p-4 text-center"
+                className={`p-4 text-center ${
+                  isProMode
+                    ? 'rounded-lg border border-zinc-900 bg-zinc-950/80'
+                    : 'rounded-2xl border border-white/5 bg-neutral-950/60'
+                }`}
               >
-                <p className="mb-1.5 text-[10px] uppercase tracking-widest text-neutral-600">{label}</p>
-                <p className={`text-lg font-bold tabular-nums ${color}`}>${value}</p>
+                <p className={`mb-1.5 text-[10px] uppercase tracking-widest ${isProMode ? 'text-red-900/60' : 'text-neutral-600'}`}>
+                  {label}
+                </p>
+                <p className={`text-lg font-bold tabular-nums ${isProMode ? 'font-mono' : ''} ${color}`}>
+                  ${value}
+                </p>
               </motion.div>
             ))}
           </div>
         </div>
       )}
 
-      {/* Connection skeleton while loading */}
+      {/* Loading skeleton */}
       {!ticker && (
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           {[1, 2, 3, 4].map(i => (
-            <div key={i} className="animate-pulse rounded-2xl border border-white/5 bg-neutral-900/30 p-4">
-              <div className="mb-2 h-2 w-12 rounded bg-neutral-800" />
-              <div className="h-6 w-20 rounded bg-neutral-800" />
+            <div key={i} className={`animate-pulse p-4 ${
+              isProMode
+                ? 'rounded-lg border border-zinc-900 bg-zinc-950/50'
+                : 'rounded-2xl border border-white/5 bg-neutral-900/30'
+            }`}>
+              <div className={`mb-2 h-2 w-12 rounded ${isProMode ? 'bg-zinc-900' : 'bg-neutral-800'}`} />
+              <div className={`h-6 w-20 rounded ${isProMode ? 'bg-zinc-900' : 'bg-neutral-800'}`} />
             </div>
           ))}
         </div>

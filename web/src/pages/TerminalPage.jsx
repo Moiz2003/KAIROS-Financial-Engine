@@ -613,23 +613,46 @@ function TradeButton({ action, loading, disabled, onClick, mode, isPro }) {
         disabled={disabled || loading}
         whileTap={active ? { scale: 0.93, y: 2 } : {}}
         whileHover={active ? { scale: 1.02 } : {}}
-        transition={{ type: 'spring', stiffness: 480, damping: 28 }}
-        className={`relative flex h-14 w-full items-center justify-center overflow-hidden rounded-2xl text-sm font-extrabold tracking-wide transition-all disabled:cursor-not-allowed disabled:opacity-40 ${
+        animate={active && !loading ? {
+          boxShadow: isBuy
+            ? [
+                '0 0 0 1px rgba(52,211,153,0.20), 0 8px 24px rgba(52,211,153,0.06)',
+                '0 0 0 1px rgba(52,211,153,0.55), 0 8px 36px rgba(52,211,153,0.20)',
+                '0 0 0 1px rgba(52,211,153,0.20), 0 8px 24px rgba(52,211,153,0.06)',
+              ]
+            : [
+                '0 0 0 1px rgba(239,68,68,0.25), 0 8px 24px rgba(239,68,68,0.08)',
+                '0 0 0 1px rgba(239,68,68,0.70), 0 8px 40px rgba(239,68,68,0.28)',
+                '0 0 0 1px rgba(239,68,68,0.25), 0 8px 24px rgba(239,68,68,0.08)',
+              ],
+        } : {}}
+        transition={{
+          boxShadow: { duration: isBuy ? 2.8 : 2.2, repeat: Infinity, ease: 'easeInOut' },
+          scale: { type: 'spring', stiffness: 480, damping: 28 },
+        }}
+        className={`relative flex h-14 w-full items-center justify-center overflow-hidden rounded-2xl text-sm font-extrabold tracking-wide transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
           isBuy
-            ? 'border border-emerald-700/50 bg-emerald-950/40 text-emerald-400 hover:bg-emerald-900/30 shadow-lg shadow-black/50'
-            : 'border border-red-700/60 bg-red-950/50 text-red-400 hover:bg-red-900/40 shadow-lg shadow-red-950/30'
+            ? 'border border-emerald-800/60 bg-emerald-950/50 text-emerald-400 hover:bg-emerald-900/40'
+            : 'border border-red-700/70 bg-red-950/60 text-red-300 hover:bg-red-900/50'
         }`}
       >
+        {/* Shimmer sweep */}
         <motion.span
           className="pointer-events-none absolute inset-0 -skew-x-12 bg-gradient-to-r from-transparent via-white/6 to-transparent"
           initial={{ x: '-120%' }}
           whileHover={{ x: '220%' }}
           transition={{ duration: 0.6, ease: 'easeInOut' }}
         />
+        {/* Inner top edge highlight */}
+        <span className={`pointer-events-none absolute inset-x-0 top-0 h-px ${
+          isBuy
+            ? 'bg-gradient-to-r from-transparent via-emerald-500/30 to-transparent'
+            : 'bg-gradient-to-r from-transparent via-red-500/40 to-transparent'
+        }`} />
         {loading ? (
           <div className={`h-5 w-5 animate-spin rounded-full border-2 border-t-transparent ${isBuy ? 'border-emerald-400' : 'border-red-400'}`} />
         ) : (
-          <span className="relative flex items-center gap-1.5">
+          <span className="relative flex items-center gap-1.5 font-mono text-sm font-black uppercase tracking-[0.15em]">
             {mode === 'DCA' ? <RefreshCw className="h-4 w-4" /> : mode === 'LIMIT' ? <Target className="h-4 w-4" /> : <Zap className="h-4 w-4" />}
             {label}
           </span>
