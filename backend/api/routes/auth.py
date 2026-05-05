@@ -45,13 +45,22 @@ def _users():
 
 
 def _set_auth_cookie(response: Response, token: str) -> None:
-    """Write the JWT into a secure, HTTP-only, SameSite=Strict cookie."""
+    """Write the JWT into a secure, HTTP-only cookie.
+
+    For cross-site deployments (frontend on a different origin than the API)
+    browsers will only accept cookies when `SameSite=None` and `Secure=True`.
+    Preserve `SameSite=Strict` during local dev when `cookie_secure` is False.
+    """
+    samesite_policy = "strict"
+    if config.cookie_secure:
+        samesite_policy = "none"
+
     response.set_cookie(
         key=COOKIE_NAME,
         value=token,
         httponly=True,
-        samesite="strict",
-        secure=config.cookie_secure,  # True in production (HTTPS), False in dev
+        samesite=samesite_policy,
+        secure=config.cookie_secure,
         max_age=_COOKIE_MAX_AGE,
         path="/",
     )
